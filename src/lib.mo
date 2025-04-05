@@ -31,6 +31,11 @@ module {
   public func initialState() : State {#v0_0_0(#data)};
   public let currentStateVersion = #v0_1_0(#id);
 
+
+  public func test() : Nat{
+    1;
+  };
+
   public func Init<system>(config : {
     manager: ClassPlusLib.ClassPlusInitializationManager;
     initialState: State;
@@ -192,6 +197,7 @@ module {
     };
 
     let OneDay =  86_400_000_000_000;
+
 
   };
 
