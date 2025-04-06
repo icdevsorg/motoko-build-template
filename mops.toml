@@ -19,3 +19,4 @@ moc = "0.14.3"
 
 [dev-dependencies]
 test = "2.1.1"
+bench = "1.0.0"
