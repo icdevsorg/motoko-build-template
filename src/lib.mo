@@ -1,3 +1,6 @@
+// This file is the main file where your module's code should be implemented. It should contain the main logic of your module and the public functions that will be exposed to other modules or canisters. The file should also include any necessary imports and type definitions.
+// Types for this library should be properly filed in the /migrations folder according to the version of the library. The types should be organized in a way that makes it easy to understand and maintain the code.  Do not define new types in this file.
+
 import MigrationTypes "migrations/types";
 import MigrationLib "migrations";
 import ClassPlusLib "mo:class-plus";
@@ -14,6 +17,7 @@ import Blob "mo:base/Blob";
 import Nat "mo:base/Nat";
 import Timer "mo:base/Timer";
 import Map "mo:map/Map";
+import Log "mo:stable-local-log";
 
 
 
@@ -36,6 +40,10 @@ module {
     1;
   };
 
+  public func natNow() : Nat{
+    Int.abs(Time.now());
+  };
+
   public func Init<system>(config : {
     manager: ClassPlusLib.ClassPlusInitializationManager;
     initialState: State;
@@ -55,29 +63,20 @@ module {
         D.print("pull environment is null");
       };
     };  
-    ClassPlusLib.ClassPlus<system,
+    let instance = ClassPlusLib.ClassPlus<system,
       Sample, 
       State,
       InitArgs,
       Environment>({config with constructor = Sample}).get;
+    
+    instance().icrc85_initialize<system>(); 
+    instance;
   };
 
-  public class Sample(stored: ?State, caller: Principal, canister: Principal, args: ?InitArgs, environment_passed: ?Environment, storageChanged: (State) -> ()){
+  public class Sample(stored: ?State, instantiator: Principal, canister: Principal, args: ?InitArgs, environment_passed: ?Environment, storageChanged: (State) -> ()){
 
     public let debug_channel = {
       var announce = true;
-    };
-
-    public var vecLog = Buffer.Buffer<Text>(1);
-
-    private func d(doLog : Bool, message: Text) {
-      if(doLog){
-        vecLog.add( Nat.toText(Int.abs(Time.now())) # " " # message);
-        if(vecLog.size() > 5000){
-          vecLog := Buffer.Buffer<Text>(1);
-        };
-        D.print(message);
-      };
     };
 
     let environment = switch(environment_passed){
@@ -87,13 +86,15 @@ module {
       };
     };
 
+    let d = environment.log.log_debug;
+
     var state : CurrentState = switch(stored){
       case(null) {
-        let #v0_1_0(#data(foundState)) = init(initialState(),currentStateVersion, null, canister);
+        let #v0_1_0(#data(foundState)) = init(initialState(),currentStateVersion, null, instantiator, canister);
         foundState;
       };
       case(?val) {
-        let #v0_1_0(#data(foundState)) = init(val, currentStateVersion, null, canister);
+        let #v0_1_0(#data(foundState)) = init(val, currentStateVersion, null, instantiator, canister);
         foundState;
       };
     };
@@ -109,7 +110,7 @@ module {
 
     private var _icrc85init = false;
 
-    private func ensureCycleShare<system>() : async*(){
+    public func icrc85_initialize<system>(){
       if(_icrc85init == true) return;
       _icrc85init := true;
 
@@ -119,7 +120,7 @@ module {
 
     private func scheduleCycleShare<system>() : async() {
       //check to see if it already exists
-      debug d(debug_channel.announce, "in schedule cycle share");
+      debug d("in schedule cycle share", "sample_cycle_share");
       switch(state.icrc85.nextCycleActionId){
         case(?val){
           switch(Map.get(environment.tt.getState().actionIdIndex, Map.nhash, val)){
@@ -152,13 +153,13 @@ module {
     };
 
     private func shareCycles<system>() : async*(){
-      debug d(debug_channel.announce, "in share cycles ");
+      debug d("in share cycles", "sample_share_cycles");
       let lastReportId = switch(state.icrc85.lastActionReported){
         case(?val) val;
         case(null) 0;
       };
 
-      debug d(debug_channel.announce, "last report id " # debug_show(lastReportId));
+      debug d("last report id " # debug_show(lastReportId), "sample_share_cycles");
 
       let actions = if(state.icrc85.activeActions > 0){
         state.icrc85.activeActions;
@@ -166,18 +167,18 @@ module {
 
       state.icrc85.activeActions := 0;
 
-      debug d(debug_channel.announce, "actions " # debug_show(actions));
+      debug d("actions " # debug_show(actions), "sample_share_cycles");
 
       var cyclesToShare = 1_000_000_000_000; //1 XDR
 
       if(actions > 0){
         let additional = Nat.div(actions, 10000);
-        debug d(debug_channel.announce, "additional " # debug_show(additional));
+        debug d("additional " # debug_show(additional), "sample_share_cycles");
         cyclesToShare := cyclesToShare + (additional * 1_000_000_000_000);
         if(cyclesToShare > 100_000_000_000_000) cyclesToShare := 100_000_000_000_000;
       };
 
-      debug d(debug_channel.announce, "cycles to share" # debug_show(cyclesToShare));
+      debug d("cycles to share" # debug_show(cyclesToShare), "sample_share_cycles");
 
       try{
         await* ovsfixed.shareCycles<system>({
@@ -190,8 +191,9 @@ module {
           };
           cycles = cyclesToShare;
         });
+        state.icrc85.lastActionReported := ?natNow();
       } catch(e){
-        debug d(debug_channel.announce, "error sharing cycles" # Error.message(e));
+        debug d("error sharing cycles" # Error.message(e), "sample_share_cycles");
       };
 
     };

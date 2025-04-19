@@ -13,9 +13,10 @@ timer-tool = "0.1.1"
 star = "0.1.1"
 map = "9.0.1"
 icrc10-mo = "0.0.1"
+stable-local-log = "0.1.1"
 
 [toolchain]
-moc = "0.14.3"
+moc = "0.14.6"
 
 [dev-dependencies]
 test = "2.1.1"
