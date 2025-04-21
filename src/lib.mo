@@ -19,8 +19,6 @@ import Timer "mo:base/Timer";
 import Map "mo:map/Map";
 import Log "mo:stable-local-log";
 
-
-
 module {
 
   public let Migration = MigrationLib;
@@ -28,6 +26,7 @@ module {
   public type State = MigrationTypes.State;
   public type CurrentState = MigrationTypes.Current.State;
   public type Environment = MigrationTypes.Current.Environment;
+  public type Stats = MigrationTypes.Current.Stats;
   public type InitArgs = MigrationTypes.Current.InitArgs;
 
   public let init = Migration.migrate;
@@ -44,6 +43,9 @@ module {
     Int.abs(Time.now());
   };
 
+  public let ICRC85_Timer_Namespace = "icrc85:ovs:shareaction:sample";
+  public let ICRC85_Payment_Namespace = "com.sample-org.libraries.sample";
+
   public func Init<system>(config : {
     manager: ClassPlusLib.ClassPlusInitializationManager;
     initialState: State;
@@ -53,23 +55,22 @@ module {
     onStorageChange : ((State) ->())
   }) :()-> Sample {
 
-    D.print("Subscriber Init");
-    switch(config.pullEnvironment){
-      case(?val) {
-        D.print("pull environment has value");
-        
-      };
-      case(null) {
-        D.print("pull environment is null");
-      };
-    };  
     let instance = ClassPlusLib.ClassPlus<system,
       Sample, 
       State,
       InitArgs,
       Environment>({config with constructor = Sample}).get;
     
-    instance().icrc85_initialize<system>(); 
+    ovsfixed.initialize_cycleShare<system>({
+      namespace = ICRC85_Timer_Namespace;
+      icrc_85_state = instance().state.icrc85;
+      wait = null;
+      registerExecutionListenerAsync = instance().environment.tt.registerExecutionListenerAsync;
+      setActionSync = instance().environment.tt.setActionSync;  
+      existingIndex = instance().environment.tt.getState().actionIdIndex;
+      handler = instance().handleIcrc85Action;
+    });
+
     instance;
   };
 
@@ -79,7 +80,7 @@ module {
       var announce = true;
     };
 
-    let environment = switch(environment_passed){
+    public let environment = switch(environment_passed){
       case(?val) val;
       case(null) {
         D.trap("Environment is required");
@@ -88,7 +89,7 @@ module {
 
     let d = environment.log.log_debug;
 
-    var state : CurrentState = switch(stored){
+    public var state : CurrentState = switch(stored){
       case(null) {
         let #v0_1_0(#data(foundState)) = init(initialState(),currentStateVersion, null, instantiator, canister);
         foundState;
@@ -108,98 +109,25 @@ module {
     // ICRC85 ovs
     //////////
 
-    private var _icrc85init = false;
-
-    public func icrc85_initialize<system>(){
-      if(_icrc85init == true) return;
-      _icrc85init := true;
-
-      ignore Timer.setTimer<system>(#nanoseconds(OneDay), scheduleCycleShare);
-      environment.tt.registerExecutionListenerAsync(?"icrc85:ovs:shareaction:sample", handleIcrc85Action : TT.ExecutionAsyncHandler);
-    };
-
-    private func scheduleCycleShare<system>() : async() {
-      //check to see if it already exists
-      debug d("in schedule cycle share", "sample_cycle_share");
-      switch(state.icrc85.nextCycleActionId){
-        case(?val){
-          switch(Map.get(environment.tt.getState().actionIdIndex, Map.nhash, val)){
-            case(?time) {
-              //already in the queue
-              return;
-            };
-            case(null) {};
-          };
-        };
-        case(null){};
-      };
-
-
-
-      let result = environment.tt.setActionSync<system>(Int.abs(Time.now()), ({actionType = "icrc85:ovs:shareaction:sample"; params = Blob.fromArray([]);}));
-      state.icrc85.nextCycleActionId := ?result.id;
-    };
-
-    private func handleIcrc85Action<system>(id: TT.ActionId, action: TT.Action) : async* Star.Star<TT.ActionId, TT.Error>{
-
-      D.print("in handle timer async " # debug_show((id,action)));
-      switch(action.actionType){
-        case("icrc85:ovs:shareaction:sample"){
-          await* shareCycles<system>();
+    public func handleIcrc85Action<system>(id: TT.ActionId, action: TT.Action) : async* Star.Star<TT.ActionId, TT.Error> {
+      switch (action.actionType) {
+        case (ICRC85_Timer_Namespace) {
+          await* ovsfixed.standardShareCycles({
+            icrc_85_state = state.icrc85;
+            icrc_85_environment = do?{environment.advanced!.icrc85!};
+            setActionSync = environment.tt.setActionSync;
+            timerNamespace = ICRC85_Timer_Namespace;
+            paymentNamespace = ICRC85_Payment_Namespace;
+            baseCycles = 1_000_000_000_000; // 1 XDR
+            maxCycles = 100_000_000_000_000; // 1 XDR
+            actionDivisor = 10000;
+            actionMultiplier = 200_000_000_000; // .2 XDR
+          });
           #awaited(id);
         };
-        case(_) #trappable(id);
+        case (_) #trappable(id);
       };
     };
-
-    private func shareCycles<system>() : async*(){
-      debug d("in share cycles", "sample_share_cycles");
-      let lastReportId = switch(state.icrc85.lastActionReported){
-        case(?val) val;
-        case(null) 0;
-      };
-
-      debug d("last report id " # debug_show(lastReportId), "sample_share_cycles");
-
-      let actions = if(state.icrc85.activeActions > 0){
-        state.icrc85.activeActions;
-      } else {1;};
-
-      state.icrc85.activeActions := 0;
-
-      debug d("actions " # debug_show(actions), "sample_share_cycles");
-
-      var cyclesToShare = 1_000_000_000_000; //1 XDR
-
-      if(actions > 0){
-        let additional = Nat.div(actions, 10000);
-        debug d("additional " # debug_show(additional), "sample_share_cycles");
-        cyclesToShare := cyclesToShare + (additional * 1_000_000_000_000);
-        if(cyclesToShare > 100_000_000_000_000) cyclesToShare := 100_000_000_000_000;
-      };
-
-      debug d("cycles to share" # debug_show(cyclesToShare), "sample_share_cycles");
-
-      try{
-        await* ovsfixed.shareCycles<system>({
-          environment = do?{environment.advanced!.icrc85!};
-          namespace = "com.icdevs.libraries.sample";
-          actions = actions;
-          schedule = func <system>(period: Nat) : async* (){
-            let result = environment.tt.setActionSync<system>(Int.abs(Time.now()) + period, {actionType = "icrc85:ovs:shareaction:sample"; params = Blob.fromArray([]);});
-            state.icrc85.nextCycleActionId := ?result.id;
-          };
-          cycles = cyclesToShare;
-        });
-        state.icrc85.lastActionReported := ?natNow();
-      } catch(e){
-        debug d("error sharing cycles" # Error.message(e), "sample_share_cycles");
-      };
-
-    };
-
-    let OneDay =  86_400_000_000_000;
-
 
   };
 

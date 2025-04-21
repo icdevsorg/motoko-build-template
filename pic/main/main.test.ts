@@ -71,7 +71,7 @@ describe("test main", () => {
 
 
 
-  it(`can call hello world`, async () => {
+  it('can call hello world', async () => {
 
     main_fixture.actor.setIdentity(admin);
 
