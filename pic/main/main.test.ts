@@ -5,12 +5,12 @@ import { IDL } from "@dfinity/candid";
 import {
   PocketIc,
   createIdentity
-} from "@hadronous/pic";
+} from "@dfinity/pic";
 
 import type {
   Actor,
   CanisterFixture
-} from "@hadronous/pic";
+} from "@dfinity/pic";
 
 
 
