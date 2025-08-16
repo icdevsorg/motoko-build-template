@@ -2,7 +2,7 @@ import {test} "mo:test/async";
 import Sample "../src/main";
 import ExperimentalCycles "mo:base/ExperimentalCycles";
 
-actor {
+persistent actor {
   
 
   public func runTests() : async () {

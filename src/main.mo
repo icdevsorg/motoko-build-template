@@ -2,13 +2,13 @@
 // It is not a complete canister and should not be used as such. It is only an example of how to use the library for this project.
 
 
-import Buffer "mo:base/Buffer";
-import D "mo:base/Debug";
-import Int "mo:base/Int";
-import Nat "mo:base/Nat";
-import Principal "mo:base/Principal";
-import Time "mo:base/Time";
-import Error "mo:base/Error";
+import List "mo:core/List";
+import D "mo:core/Debug";
+import Int "mo:core/Int";
+import Nat "mo:core/Nat";
+import Principal "mo:core/Principal";
+import Time "mo:core/Time";
+import Error "mo:core/Error";
 import ClassPlus "mo:class-plus";
 import TT "mo:timer-tool";
 import ICRC10 "mo:icrc10-mo";
@@ -16,7 +16,7 @@ import Log "mo:stable-local-log";
 
 import Sample ".";
 
-shared (deployer) actor class SampleCanister<system>(
+shared (deployer) persistent actor class SampleCanister<system>(
   args:?{
     sampleArgs: ?Sample.InitArgs;
     ttArgs: ?TT.InitArgList;
@@ -25,14 +25,14 @@ shared (deployer) actor class SampleCanister<system>(
 
   
 
-  let thisPrincipal = Principal.fromActor(this);
-  stable var _owner = deployer.caller;
+  transient let thisPrincipal = Principal.fromActor(this);
+  var _owner = deployer.caller;
 
-  let initManager = ClassPlus.ClassPlusInitializationManager(_owner, Principal.fromActor(this), true);
-  let sampleInitArgs = do?{args!.sampleArgs!};
-  let ttInitArgs : ?TT.InitArgList = do?{args!.ttArgs!};
+  transient let initManager = ClassPlus.ClassPlusInitializationManager(_owner, Principal.fromActor(this), true);
+  transient let sampleInitArgs = do?{args!.sampleArgs!};
+  transient let ttInitArgs : ?TT.InitArgList = do?{args!.ttArgs!};
 
-  stable var icrc10 = ICRC10.initCollection();
+  var icrc10 = ICRC10.initCollection();
 
   private func reportTTExecution(execInfo: TT.ExecutionReport): Bool{
     D.print("CANISTER: TimerTool Execution: " # debug_show(execInfo));
@@ -44,9 +44,9 @@ shared (deployer) actor class SampleCanister<system>(
     return null;
   };
 
-  stable var tt_migration_state: TT.State = TT.Migration.migration.initialState;
+  var tt_migration_state: TT.State = TT.Migration.migration.initialState;
 
-  let tt  = TT.Init<system>({
+  transient let tt  = TT.Init<system>({
     manager = initManager;
     initialState = tt_migration_state;
     args = ttInitArgs;
@@ -70,8 +70,8 @@ shared (deployer) actor class SampleCanister<system>(
     }
   });
 
-  stable var localLog_migration_state: Log.State = Log.initialState();
-  let localLog = Log.Init<system>({
+  var localLog_migration_state: Log.State = Log.initialState();
+  transient let localLog = Log.Init<system>({
     args = ?{
       min_level = ?#Debug;
       bufferSize = ?5000;
@@ -91,11 +91,11 @@ shared (deployer) actor class SampleCanister<system>(
     };
   });
 
-  let d = localLog().log_debug;
+  transient let d = localLog().log_debug;
 
-  stable var sample_migration_state: Sample.State = Sample.initialState();
+  var sample_migration_state: Sample.State = Sample.initialState();
 
-  let sample = Sample.Init<system>({
+  transient let sample = Sample.Init<system>({
     manager = initManager;
     initialState = sample_migration_state;
     args = sampleInitArgs;
